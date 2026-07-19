@@ -60,6 +60,27 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
       "load homepage",
       async () => {
         await page.goto("https://www.delta.com/", { waitUntil: "domcontentloaded" });
+        // Best-effort extra settle time: a lot of sites hydrate their real
+        // interactive widgets well after domcontentloaded fires. Not fatal
+        // if the page never goes fully idle (e.g. background analytics).
+        await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+      },
+    ],
+    [
+      "dismiss cookie/privacy banner (best-effort, ok if none appears)",
+      async () => {
+        const candidates = [
+          page.getByRole("button", { name: /accept all|accept cookies|i accept|got it|agree/i }),
+          page.locator("#onetrust-accept-btn-handler"),
+        ];
+        for (const locator of candidates) {
+          try {
+            await locator.first().click({ timeout: 3_000 });
+            return;
+          } catch {
+            // try the next candidate; no banner matching this one
+          }
+        }
       },
     ],
     [
