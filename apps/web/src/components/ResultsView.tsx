@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SearchResultsResponse } from "@points-search/shared";
 import { formatCents, formatDateTime, formatDuration, formatMiles, formatStops } from "@/lib/format";
+import { parseJsonResponse } from "@/lib/http";
 
 const POLL_INTERVAL_MS = 2500;
 
@@ -17,7 +18,7 @@ export function ResultsView({ searchId }: { searchId: string }) {
     async function poll() {
       try {
         const res = await fetch(`/api/search/${searchId}`);
-        const body = await res.json();
+        const body = await parseJsonResponse(res);
         if (!res.ok) throw new Error(body.error ?? "Failed to load search.");
         if (cancelled) return;
         setData(body);

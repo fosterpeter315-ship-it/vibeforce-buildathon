@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { REGIONS, type CabinClass, type SearchInput } from "@points-search/shared";
+import { parseJsonResponse } from "@/lib/http";
 
 const CABIN_OPTIONS: { value: CabinClass; label: string }[] = [
   { value: "economy", label: "Economy" },
@@ -60,7 +61,7 @@ export function SearchForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const body = await res.json();
+      const body = await parseJsonResponse(res);
       if (!res.ok) {
         throw new Error(body.error ?? "Search failed to start.");
       }
