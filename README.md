@@ -70,11 +70,16 @@ npm run dev
 - `apps/web` — Next.js app. Search form + results UI, plus API routes that
   create searches and enqueue work.
 - `apps/scraper-worker` — Node worker. Consumes queued jobs, opens a
-  headless Chromium page against delta.com (Playwright) and, from inside that
-  page's own JS context, calls Delta's **flexible-dates calendar API**
-  (`offer-api-prd.delta.com/prd/rm-offer-gql`) — verified against a real
-  captured browser session, no cookies/auth required. Parsed results are
-  written to Postgres.
+  headless Chromium page and **drives delta.com's actual search form** like a
+  person would (selects one-way, enables "shop with miles," types the
+  origin/destination/date, picks a cabin, hits search), then listens for
+  whatever response comes back from Delta's offer API
+  (`offer-api-prd.delta.com/prd/rm-offer-gql`). This replaced an earlier
+  version that called that API directly with a synthesized request — direct
+  calls got reliably blocked (`HTTP 444`) by Delta's bot protection, so
+  driving the real UI is the more legitimate approach, even though it means
+  the DOM selectors are unverified guesses (see below) rather than confirmed
+  from a capture. Parsed results are written to Postgres.
 - `packages/shared` — shared TypeScript types and the region → airport
   mapping (e.g. "Europe" → LHR, CDG, AMS, FRA, MAD, ...).
 - Redis + BullMQ queue the per-destination search jobs so a region search
@@ -112,22 +117,32 @@ Search request (ATL → Europe, 2026-09-10, Business, Delta)
 ## What's verified vs. what's still a guess
 
 Verified against a real captured browser session (HAR) on 2026-07-19:
-- The endpoint, request shape, and response shape in
-  `apps/scraper-worker/src/scrapers/delta.ts` for **Main Cabin (economy)**.
-- No cookies/auth are required for this specific call.
+- The **response-parsing logic** for the calendar/flexible-dates shape
+  (`gqlOffersSets` / `itineraryDepartureDate`) in `parseOfferResponse()`,
+  for **Main Cabin (economy)**.
+- Calling that API directly (rather than through the real UI) works
+  *functionally* but gets reliably blocked by Delta's bot protection
+  (`HTTP 444`) — see the caveats above. That's why the scraper now drives
+  the actual search form instead.
 
-Still unverified / open work:
-- **Cabin mapping.** Only `economy` → `"MAIN"` is confirmed. The
-  `premium_economy`/`business`/`first` → brand-ID mappings in
-  `CABIN_BRAND_ID` are guesses based on Delta's public cabin names, not
-  confirmed to actually filter results. To verify: capture a HAR while
-  explicitly selecting that cabin on delta.com before searching.
-- **Flight-level detail.** This endpoint is Delta's calendar/flexible-dates
-  view — it returns the cheapest price *per day*, not a specific itinerary,
-  so `flightNumbers`/`departAt`/`arriveAt`/`durationMinutes` are currently
-  always empty. Getting real flight times/numbers requires capturing the
-  richer query that fires when you click from the calendar into one
-  specific date's flight list.
+Still unverified / open work — all in `apps/scraper-worker/src/scrapers/delta.ts`:
+- **Every DOM selector in `driveSearchForm()`** — trip-type toggle, "shop
+  with miles" control, from/to fields, date field, cabin selector, search
+  button. None of these have been confirmed against the live site. Each
+  step logs `[delta-ui] ... step ok — <name>` on success, so if a search
+  fails, the terminal will show exactly which step it got stuck on.
+- **Cabin mapping.** `CABIN_UI_LABEL` guesses what text is clickable for
+  each cabin (`"Main Cabin"`, `"Premium Select"`, `"Delta One"`, `"First
+  Class"`) — unconfirmed beyond Economy.
+- **Whether the real UI search flow even returns the calendar shape.** The
+  original capture was of Delta's *flexible-dates calendar* specifically;
+  the main one-way search button might trigger a different query with a
+  different response shape entirely (Delta's frontend code references
+  fields like `flightNumber`/`segments` elsewhere, suggesting a richer,
+  differently-shaped response for actual flight results). If so,
+  `parseOfferResponse()` will log a preview of the real payload instead of
+  silently returning nothing — that preview is what to hand back for the
+  next iteration.
 
 ## If something goes wrong
 
@@ -142,12 +157,22 @@ Still unverified / open work:
 - **Port already in use** — something else on your machine is already using
   port 3000, 5432, or 6379. Close other terminal windows running this
   project, or restart your machine, and try again.
-- **`[leg] ... FAILED — ... Delta offer API 444 ...`** — a `444` means
-  Delta's server closed the connection with no response, almost always
-  anti-bot/rate-limit protection reacting to automated-looking traffic (e.g.
-  several requests firing at once). The defaults are already set to run one
-  request at a time with a several-second delay between each — if you still
-  see `444`s, wait a while before searching again rather than retrying
-  repeatedly. This endpoint is unofficial and unsupported; Delta tightening
-  bot detection on it is a real, expected risk, not a bug to "fix" by trying
-  to look more convincing to their WAF.
+- **`[leg] ... FAILED — UI step failed at "..." ...`** — the scraper drives
+  the real delta.com search form, and one of its guessed selectors didn't
+  match anything on the live page. The step name in the error (e.g. `"fill
+  origin"`, `"select cabin"`) says exactly where it got stuck — that's
+  where to fix a selector in `driveSearchForm()`.
+- **`[delta-ui] ... no matching API response captured within 25s`** — the
+  form steps all completed, but no response from Delta's offer API showed
+  up. Likely the search never actually submitted (a step "succeeded" by
+  clicking the wrong element) or Delta's page took longer than 25s to
+  respond.
+- **`[delta-ui] ... response didn't match the known calendar shape ...`**
+  followed by a payload preview — a response came back, but it's not the
+  calendar shape the parser understands. Share that preview and the parser
+  can be extended to match the real shape.
+- **Previously, direct API calls got `HTTP 444`** (Delta's server closing
+  the connection — anti-bot protection). This endpoint is unofficial and
+  unsupported either way; treat any of the above as an expected risk of
+  automating a site that was never built to be automated, not bugs with a
+  guaranteed fix.
