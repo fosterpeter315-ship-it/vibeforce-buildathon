@@ -243,12 +243,28 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
       },
     ],
     [
-      "select cabin",
+      "select cabin (best-effort)",
       async () => {
-        await page
-          .getByText(CABIN_UI_LABEL[params.cabin], { exact: false })
-          .first()
-          .click({ timeout: 10_000 });
+        // Economy is Delta's default, and the main search widget has no
+        // visible cabin selector (it lives inside the passengers dropdown or
+        // under "Advanced Search"). So for economy we do nothing, and for
+        // other cabins we try but never fail the whole search if the control
+        // isn't found — cabin filtering beyond economy is unverified anyway.
+        if (params.cabin === "economy") {
+          console.log(`[delta-ui] ${label}: cabin=economy is the default, skipping cabin selection`);
+          return;
+        }
+        try {
+          await page
+            .getByText(CABIN_UI_LABEL[params.cabin], { exact: false })
+            .first()
+            .click({ timeout: 5_000 });
+        } catch {
+          console.log(
+            `[delta-ui] ${label}: couldn't find a "${CABIN_UI_LABEL[params.cabin]}" control ` +
+              `on the main widget — proceeding with Delta's default cabin instead.`,
+          );
+        }
       },
     ],
     [
