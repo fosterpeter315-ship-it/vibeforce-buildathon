@@ -57,6 +57,46 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Types an airport code into the origin/destination modal, then clicks the
+ * matching suggestion. Deliberately tries several strategies in one shot,
+ * because the exact markup keeps surprising us: a screenshot showed the
+ * field labelled "Origin" but getByPlaceholder("Origin") still found
+ * nothing, which means "Origin" is a floating label / accessible name, not
+ * a placeholder attribute. The field also appears auto-focused when the
+ * modal opens (blue focus ring), so keyboard typing is the final fallback
+ * that needs no locator at all.
+ */
+async function fillAirportModal(page: Page, kind: "Origin" | "Destination", code: string): Promise<void> {
+  const byName = new RegExp(`${kind}|city|airport`, "i");
+  const input = page
+    .getByRole("textbox", { name: byName })
+    .or(page.getByLabel(byName))
+    .or(page.getByPlaceholder(byName))
+    .first();
+
+  let typed = false;
+  try {
+    await input.fill(code, { timeout: 6_000 });
+    typed = true;
+  } catch {
+    // Couldn't locate a matching input — fall back to typing on the
+    // keyboard, relying on the modal having auto-focused its field.
+    await page.keyboard.type(code, { delay: 120 });
+    typed = true;
+  }
+  if (!typed) throw new Error(`could not enter "${code}" into the ${kind} field`);
+
+  // Give the autocomplete suggestions a moment to appear, then click the one
+  // matching the code (as a listbox option if possible, else any matching text).
+  await sleep(1_500);
+  const suggestion = page
+    .getByRole("option", { name: new RegExp(code, "i") })
+    .or(page.getByText(new RegExp(`\\b${code}\\b`, "i")))
+    .first();
+  await suggestion.click({ timeout: 10_000 });
+}
+
+/**
  * Drives the actual delta.com UI like a real user would, instead of calling
  * the internal API directly. UNVERIFIED — none of these selectors have been
  * confirmed against the live site. Each step is named and logged so a
@@ -129,12 +169,7 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "type and select origin",
       async () => {
-        // Confirmed via screenshot: clicking "From" opens a modal titled
-        // "Search" with a single text input, placeholder "Origin" — not
-        // nested in any "from-and-to"-classed container.
-        const input = page.getByPlaceholder(/^origin$/i).first();
-        await input.fill(params.origin, { timeout: 10_000 });
-        await page.getByText(new RegExp(params.origin, "i")).first().click({ timeout: 10_000 });
+        await fillAirportModal(page, "Origin", params.origin);
       },
     ],
     [
@@ -146,15 +181,7 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "type and select destination",
       async () => {
-        // Guessing the destination modal mirrors the origin one exactly
-        // (placeholder "Destination") — unverified, but a reasonable bet
-        // given how closely paired these two fields are in the UI.
-        const input = page.getByPlaceholder(/^destination$/i).first();
-        await input.fill(params.destination, { timeout: 10_000 });
-        await page
-          .getByText(new RegExp(params.destination, "i"))
-          .first()
-          .click({ timeout: 10_000 });
+        await fillAirportModal(page, "Destination", params.destination);
       },
     ],
     [
