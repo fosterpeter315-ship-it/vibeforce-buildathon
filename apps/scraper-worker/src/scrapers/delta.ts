@@ -96,6 +96,58 @@ async function fillAirportModal(page: Page, kind: "Origin" | "Destination", code
   await suggestion.click({ timeout: 10_000 });
 }
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/**
+ * Picks the departure date from Delta's calendar widget. Confirmed from an
+ * error log: "Depart" is a <button class="date-picker-trigger-btn"
+ * aria-label="Flight Date Field, DepartDate">, i.e. it opens a calendar
+ * rather than accepting typed text. The Angular markup (_ngcontent-ng-*)
+ * means day cells are almost certainly clickable elements with an
+ * accessible name containing the full date, so we open the calendar and
+ * click the matching day, advancing months if the target isn't shown yet.
+ * Exact day-cell / next-month selectors are still unverified guesses.
+ */
+async function pickDepartDate(page: Page, dateStr: string): Promise<void> {
+  const [year, month, day] = dateStr.split("-").map((n) => parseInt(n, 10));
+  const monthName = MONTH_NAMES[month - 1];
+  // Match names like "October 3, 2026" or "Oct 3 2026" (comma optional).
+  const dayRegexes = [
+    new RegExp(`${monthName}\\s+${day},?\\s+${year}`, "i"),
+    new RegExp(`${monthName.slice(0, 3)}\\w*\\s+${day},?\\s+${year}`, "i"),
+  ];
+
+  // Open the calendar.
+  await page
+    .getByRole("button", { name: /depart\s*date/i })
+    .or(page.locator(".date-picker-trigger-btn"))
+    .first()
+    .click({ timeout: 10_000 });
+  await sleep(800);
+
+  // Click the target day, advancing to a later month if it's not visible yet.
+  for (let attempt = 0; attempt < 15; attempt++) {
+    for (const re of dayRegexes) {
+      const cell = page
+        .getByRole("button", { name: re })
+        .or(page.getByRole("gridcell", { name: re }))
+        .first();
+      if ((await cell.count()) > 0 && (await cell.isVisible().catch(() => false))) {
+        await cell.click({ timeout: 5_000 });
+        return;
+      }
+    }
+    const nextBtn = page.getByRole("button", { name: /next month|next/i }).first();
+    if ((await nextBtn.count()) === 0) break;
+    await nextBtn.click({ timeout: 3_000 }).catch(() => {});
+    await sleep(400);
+  }
+  throw new Error(`could not find a calendar day cell for ${dateStr}`);
+}
+
 /**
  * Drives the actual delta.com UI like a real user would, instead of calling
  * the internal API directly. UNVERIFIED — none of these selectors have been
@@ -187,9 +239,7 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "set depart date",
       async () => {
-        const field = page.getByPlaceholder(/depart/i).or(page.getByLabel(/depart/i)).first();
-        await field.click({ timeout: 10_000 });
-        await field.fill(params.date);
+        await pickDepartDate(page, params.date);
       },
     ],
     [
