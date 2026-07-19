@@ -18,6 +18,8 @@ function sleep(ms: number): Promise<void> {
 async function processLeg(job: Job<SearchLegJob>): Promise<void> {
   const { legId, searchId, origin, destinationAirport, searchDate, cabin, program, nonstopOnly } =
     job.data;
+  const label = `${origin}->${destinationAirport} ${searchDate} (${cabin}${nonstopOnly ? ", nonstop" : ""})`;
+  console.log(`[leg] ${label}: picked up job ${job.id}`);
 
   // Jittered pacing so a region search doesn't hit delta.com in a burst.
   await sleep(Math.random() * env.jitterMs);
@@ -35,8 +37,12 @@ async function processLeg(job: Job<SearchLegJob>): Promise<void> {
     });
 
     if (cached) {
+      console.log(
+        `[leg] ${label}: reusing cached leg ${cached.legId} (within ${env.cacheTtlMinutes}min TTL) instead of calling Delta again`,
+      );
       await copyResultsToLeg(cached.legId, legId);
     } else {
+      console.log(`[leg] ${label}: no fresh cache hit, calling Delta now`);
       const flights = await runDeltaSearch({
         origin,
         destination: destinationAirport,
@@ -44,11 +50,13 @@ async function processLeg(job: Job<SearchLegJob>): Promise<void> {
         cabin,
         nonstopOnly,
       });
+      console.log(`[leg] ${label}: Delta call returned ${flights.length} usable offer(s)`);
       await insertFlightResults(legId, origin, destinationAirport, cabin, flights);
     }
 
     await markLegStatus(legId, "done");
   } catch (err) {
+    console.log(`[leg] ${label}: FAILED —`, err instanceof Error ? err.message : String(err));
     await markLegStatus(legId, "failed", err instanceof Error ? err.message : String(err));
   } finally {
     await maybeCompleteSearch(searchId);
