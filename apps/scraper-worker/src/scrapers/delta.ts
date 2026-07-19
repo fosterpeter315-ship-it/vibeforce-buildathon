@@ -84,9 +84,19 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
       },
     ],
     [
+      "open trip type dropdown",
+      async () => {
+        // A live test confirmed "One Way" exists in the DOM as
+        // <span class="dropdown__list-item-text">One Way</span> but is
+        // reported "not visible" — i.e. it's a closed dropdown's list item.
+        // Clicking the currently-shown default ("Round Trip") should open it.
+        await page.getByText(/round trip/i).first().click({ timeout: 10_000 });
+      },
+    ],
+    [
       "select One Way trip type",
       async () => {
-        await page.getByText(/one way/i).first().click({ timeout: 10_000 });
+        await page.getByText(/^one way$/i).first().click({ timeout: 10_000 });
       },
     ],
     [
