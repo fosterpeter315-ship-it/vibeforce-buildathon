@@ -33,13 +33,13 @@ export function mapFlightResultRow(row: any): FlightResult {
     originAirport: row.origin_airport,
     destinationAirport: row.destination_airport,
     cabin: row.cabin,
-    flightNumbers: row.flight_numbers,
+    flightNumbers: row.flight_numbers ?? undefined,
     milesPrice: row.miles_price,
     taxesFeesCents: row.taxes_fees_cents,
     currency: row.currency,
     stops: row.stops,
-    departAt: row.depart_at,
-    arriveAt: row.arrive_at,
-    durationMinutes: row.duration_minutes,
+    departAt: row.depart_at ?? undefined,
+    arriveAt: row.arrive_at ?? undefined,
+    durationMinutes: row.duration_minutes ?? undefined,
   };
 }

@@ -3,14 +3,14 @@ import type { CabinClass } from "@points-search/shared";
 import { env } from "../env.js";
 
 export interface ParsedFlight {
-  flightNumbers: string[];
   milesPrice: number;
   taxesFeesCents: number;
   currency: string;
   stops: number;
-  departAt: string;
-  arriveAt: string;
-  durationMinutes: number;
+  flightNumbers?: string[];
+  departAt?: string;
+  arriveAt?: string;
+  durationMinutes?: number;
   rawPayload?: unknown;
 }
 
@@ -21,33 +21,96 @@ export interface DeltaSearchParams {
   cabin: CabinClass;
 }
 
-const CABIN_LABEL: Record<CabinClass, string> = {
-  economy: "Main Cabin",
-  premium_economy: "Premium Select",
-  business: "Delta One",
-  first: "Delta One",
-};
+const OFFER_API_URL = "https://offer-api-prd.delta.com/prd/rm-offer-gql";
 
 /**
- * NOT YET VERIFIED AGAINST THE LIVE SITE.
+ * Verified against a real captured session (2026-07-19): this is Delta's
+ * flexible-dates calendar query, confirmed to work with NO cookies/auth —
+ * it's a public, unauthenticated endpoint. It returns the cheapest
+ * miles/cash price per day across a date window, not a specific itinerary.
  *
- * delta.com's award-search UI and the internal JSON endpoint it calls are
- * both unpublished and change without notice, so the URL pattern, DOM
- * selectors, and response shape below are a best-effort starting point, not
- * a confirmed contract. Before this scraper will return real data:
- *
- *   1. Open delta.com's award search in a real browser with devtools open,
- *      run a one-way search, and find the XHR/fetch call that returns the
- *      flight/price list (Network tab, filter by Fetch/XHR).
- *   2. Replace AWARD_RESPONSE_URL_PATTERN below with a regex matching that
- *      request's URL.
- *   3. Replace parseDeltaResponse() with logic that matches that response's
- *      actual JSON shape.
- *   4. Replace the form-filling selectors in runDeltaSearch() with whatever
- *      delta.com currently renders (data-testid attributes are more stable
- *      than classnames, if present).
+ * "MAIN" (Main Cabin / economy) is the only confirmed cabin value, taken
+ * directly from the capture. The other three are UNVERIFIED GUESSES based
+ * on Delta's public cabin naming (Comfort+/Premium Select, Delta One, First)
+ * — nothing in the capture confirms these actually filter results by cabin.
+ * To verify: repeat the HAR capture with a non-economy cabin explicitly
+ * selected on delta.com before searching, and diff the request body against
+ * this one.
  */
-const AWARD_RESPONSE_URL_PATTERN = /delta\.com\/.*\/(shop|search).*award/i;
+const CABIN_BRAND_ID: Record<CabinClass, string> = {
+  economy: "MAIN", // confirmed
+  premium_economy: "PREMIUM_SELECT", // unverified guess
+  business: "DELTA_ONE", // unverified guess
+  first: "FIRST", // unverified guess
+};
+
+const CALENDAR_QUERY = `query ($offerSearchCriteria: OfferSearchCriteriaInput!) {
+  gqlSearchOffers(offerSearchCriteria: $offerSearchCriteria) {
+    offerResponseId
+    gqlOffersSets {
+      offers {
+        offerId
+        additionalOfferProperties {
+          offered
+          soldOut
+          lowestFare
+          totalTripStopCnt
+          discountAvailable
+        }
+        offerPricing {
+          totalAmt {
+            currencyEquivalentPrice {
+              currencyAmt
+            }
+            milesEquivalentPrice {
+              mileCnt
+            }
+          }
+        }
+      }
+      itineraryDepartureDate
+    }
+    offerDataList {
+      pricingOptions {
+        pricingOptionDetail {
+          currencyCode
+        }
+      }
+    }
+  }
+}`;
+
+function buildRequestBody(params: DeltaSearchParams) {
+  return {
+    variables: {
+      offerSearchCriteria: {
+        productGroups: [{ productCategoryCode: "FLIGHTS" }],
+        customers: [{ passengerTypeCode: "ADT", passengerId: "1" }],
+        offersCriteria: {
+          resultsPageNum: 1,
+          pricingCriteria: { priceableIn: ["MILES"] },
+          preferences: {
+            nonStopOnly: false,
+            refundableOnly: false,
+            excludeBrandTypes: [],
+          },
+          flightRequestCriteria: {
+            sortByBrandId: CABIN_BRAND_ID[params.cabin],
+            searchOriginDestination: [
+              {
+                departureLocalTs: `${params.date}T00:00:00`,
+                destinations: [{ airportCode: params.destination }],
+                origins: [{ airportCode: params.origin }],
+                calenderDateRequest: { daysBeforeCnt: 0, daysAfterCnt: 0 },
+              },
+            ],
+          },
+        },
+      },
+    },
+    query: CALENDAR_QUERY,
+  };
+}
 
 export async function runDeltaSearch(params: DeltaSearchParams): Promise<ParsedFlight[]> {
   const browser = await chromium.launch({
@@ -63,61 +126,69 @@ export async function runDeltaSearch(params: DeltaSearchParams): Promise<ParsedF
     });
     const page = await context.newPage();
 
-    let capturedPayload: unknown = null;
-    page.on("response", async (response) => {
-      if (!AWARD_RESPONSE_URL_PATTERN.test(response.url())) return;
-      try {
-        capturedPayload = await response.json();
-      } catch {
-        // Non-JSON or already-consumed response body; ignore.
-      }
-    });
+    // Load a real delta.com page first so the POST below runs with the same
+    // browser/JS/TLS fingerprint a genuine page load would have, even though
+    // the endpoint itself didn't require any session state in the capture.
+    await page.goto("https://www.delta.com/", { waitUntil: "domcontentloaded" });
 
-    await page.goto("https://www.delta.com/flight-search/book-a-flight", {
-      waitUntil: "domcontentloaded",
-    });
+    const body = buildRequestBody(params);
+    const payload = await page.evaluate(
+      async ({ url, body, airportPair }) => {
+        const transactionId = `${crypto.randomUUID()}_${Date.now()}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            accept: "application/json, text/plain, */*",
+            "content-type": "application/json",
+            airline: "DL",
+            applicationid: "DC",
+            channelid: "DCOM",
+            transactionid: transactionId,
+            "x-app-route": "dates",
+            "x-app-type": "dcom-shop",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          throw new Error(`Delta offer API ${res.status} for ${airportPair}`);
+        }
+        return res.json();
+      },
+      { url: OFFER_API_URL, body, airportPair: `${params.origin}-${params.destination}` },
+    );
 
-    await page.getByRole("radio", { name: /one way/i }).click();
-    await page.getByLabel(/shop with miles/i).check();
-    await page.getByLabel(/from/i).fill(params.origin);
-    await page.getByLabel(/to/i).fill(params.destination);
-    await page.getByLabel(/depart/i).fill(params.date);
-    await page.getByLabel(/cabin/i).selectOption({ label: CABIN_LABEL[params.cabin] });
-    await page.getByRole("button", { name: /search|find flights/i }).click();
-
-    await page.waitForResponse(AWARD_RESPONSE_URL_PATTERN, { timeout: 30_000 }).catch(() => {
-      // Fall through; capturedPayload stays null and we return no results below.
-    });
-
-    if (!capturedPayload) {
-      return [];
-    }
-    return parseDeltaResponse(capturedPayload, params);
+    return parseCalendarResponse(payload, params);
   } finally {
     await browser.close();
   }
 }
 
-/** Placeholder parser — see the module-level TODO above. */
-function parseDeltaResponse(payload: unknown, params: DeltaSearchParams): ParsedFlight[] {
-  const offers = (payload as { offers?: unknown[] })?.offers;
-  if (!Array.isArray(offers)) return [];
+function parseCalendarResponse(payload: unknown, params: DeltaSearchParams): ParsedFlight[] {
+  const search = (payload as any)?.data?.gqlSearchOffers;
+  const offerSets: any[] = search?.gqlOffersSets ?? [];
+  const currency: string =
+    search?.offerDataList?.pricingOptions?.[0]?.pricingOptionDetail?.currencyCode ?? "USD";
 
-  return offers.flatMap((offer): ParsedFlight[] => {
-    const o = offer as Record<string, any>;
-    if (!o?.milesPrice || !o?.segments) return [];
-    return [
-      {
-        flightNumbers: (o.segments as any[]).map((s) => `${s.carrierCode}${s.flightNumber}`),
-        milesPrice: Number(o.milesPrice),
-        taxesFeesCents: Math.round(Number(o.taxesFees ?? 0) * 100),
-        currency: o.currency ?? "USD",
-        stops: Math.max((o.segments as any[]).length - 1, 0),
-        departAt: o.departureDateTime,
-        arriveAt: o.arrivalDateTime,
-        durationMinutes: Number(o.durationMinutes ?? 0),
-        rawPayload: o,
-      },
-    ];
+  const daySet = offerSets.find((set) => set.itineraryDepartureDate === params.date);
+  if (!daySet) return [];
+
+  const priced = (daySet.offers ?? []).filter((offer: any) => offer.offerPricing?.length);
+  if (priced.length === 0) return [];
+
+  const cheapest = priced.reduce((best: any, offer: any) => {
+    const miles = offer.offerPricing[0]?.totalAmt?.milesEquivalentPrice?.mileCnt ?? Infinity;
+    const bestMiles = best.offerPricing[0]?.totalAmt?.milesEquivalentPrice?.mileCnt ?? Infinity;
+    return miles < bestMiles ? offer : best;
   });
+
+  const pricing = cheapest.offerPricing[0].totalAmt;
+  return [
+    {
+      milesPrice: pricing.milesEquivalentPrice.mileCnt,
+      taxesFeesCents: Math.round((pricing.currencyEquivalentPrice?.currencyAmt ?? 0) * 100),
+      currency,
+      stops: cheapest.additionalOfferProperties?.totalTripStopCnt ?? 0,
+      rawPayload: cheapest,
+    },
+  ];
 }

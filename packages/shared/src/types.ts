@@ -49,14 +49,20 @@ export interface FlightResult {
   originAirport: string;
   destinationAirport: string;
   cabin: CabinClass;
-  flightNumbers: string[];
   milesPrice: number;
   taxesFeesCents: number;
   currency: string;
   stops: number;
-  departAt: string;
-  arriveAt: string;
-  durationMinutes: number;
+  /**
+   * Delta's flexible-dates calendar endpoint (currently the only verified
+   * data source) only gives a per-day cheapest price, not a specific
+   * itinerary. These are populated once a flight-level search is wired up;
+   * until then, results only carry price/stop info per date.
+   */
+  flightNumbers?: string[];
+  departAt?: string;
+  arriveAt?: string;
+  durationMinutes?: number;
 }
 
 /** Payload for a single queued (origin, destination, date) scrape job. */

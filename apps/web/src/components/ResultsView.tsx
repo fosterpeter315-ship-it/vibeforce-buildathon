@@ -44,6 +44,7 @@ export function ResultsView({ searchId }: { searchId: string }) {
   const legsDone = legs.filter((l) => l.status === "done" || l.status === "failed").length;
   const progressPct = legs.length === 0 ? 0 : Math.round((legsDone / legs.length) * 100);
 
+  const legDateById = new Map(legs.map((l) => [l.id, l.searchDate]));
   const byDestination = new Map<string, typeof results>();
   for (const r of results) {
     const list = byDestination.get(r.destinationAirport) ?? [];
@@ -88,23 +89,29 @@ export function ResultsView({ searchId }: { searchId: string }) {
         return (
           <div className="destination-group" key={destination}>
             <div className="destination-heading">{destination}</div>
-            {flights.map((f) => (
-              <div className="result-card" key={f.id}>
-                <div>
-                  <div className="result-meta">
-                    {f.flightNumbers.join(" + ")} &middot; {formatStops(f.stops)} &middot;{" "}
-                    {formatDuration(f.durationMinutes)}
+            {flights.map((f) => {
+              const hasFlightDetail = Boolean(f.flightNumbers && f.departAt && f.arriveAt);
+              return (
+                <div className="result-card" key={f.id}>
+                  <div>
+                    <div className="result-meta">
+                      {hasFlightDetail ? f.flightNumbers!.join(" + ") + " · " : ""}
+                      {formatStops(f.stops)}
+                      {f.durationMinutes != null ? ` · ${formatDuration(f.durationMinutes)}` : ""}
+                    </div>
+                    <div className="result-meta">
+                      {hasFlightDetail
+                        ? `${formatDateTime(f.departAt!)} → ${formatDateTime(f.arriveAt!)}`
+                        : `${legDateById.get(f.legId) ?? ""} — exact flight times not yet available`}
+                    </div>
                   </div>
-                  <div className="result-meta">
-                    {formatDateTime(f.departAt)} &rarr; {formatDateTime(f.arriveAt)}
+                  <div style={{ textAlign: "right" }}>
+                    <div className="result-miles">{formatMiles(f.milesPrice)}</div>
+                    <div className="result-meta">+ {formatCents(f.taxesFeesCents)} taxes/fees</div>
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="result-miles">{formatMiles(f.milesPrice)}</div>
-                  <div className="result-meta">+ {formatCents(f.taxesFeesCents)} taxes/fees</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {flights.length === 0 && (
               <p className="empty-note">
                 {stillWorking ? "Searching..." : "No award availability found."}
