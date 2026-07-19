@@ -109,20 +109,37 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
       },
     ],
     [
-      "fill origin",
+      "open origin field",
       async () => {
-        const field = page.getByPlaceholder(/from/i).or(page.getByLabel(/^from$/i)).first();
-        await field.click({ timeout: 10_000 });
-        await field.fill(params.origin);
+        // Confirmed via Inspect Element: "From" is
+        // <label class="from-and-to__button-label"> with no `for` attribute
+        // and no placeholder — a button-styled label, not a real <label> for
+        // an <input>, so getByPlaceholder/getByLabel can never find it.
+        await page.getByText(/^from$/i).first().click({ timeout: 10_000 });
+      },
+    ],
+    [
+      "type and select origin",
+      async () => {
+        // Guessing that clicking the label above reveals a plain textbox to
+        // type into, then a matching suggestion to click. Unverified beyond
+        // that point.
+        const input = page.getByRole("textbox").first();
+        await input.fill(params.origin, { timeout: 10_000 });
         await page.getByText(new RegExp(params.origin, "i")).first().click({ timeout: 10_000 });
       },
     ],
     [
-      "fill destination",
+      "open destination field",
       async () => {
-        const field = page.getByPlaceholder(/^to$/i).or(page.getByLabel(/^to$/i)).first();
-        await field.click({ timeout: 10_000 });
-        await field.fill(params.destination);
+        await page.getByText(/^to$/i).first().click({ timeout: 10_000 });
+      },
+    ],
+    [
+      "type and select destination",
+      async () => {
+        const input = page.getByRole("textbox").first();
+        await input.fill(params.destination, { timeout: 10_000 });
         await page
           .getByText(new RegExp(params.destination, "i"))
           .first()
