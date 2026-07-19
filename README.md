@@ -167,7 +167,11 @@ Still unverified / open work — all in `apps/scraper-worker/src/scrapers/delta.
   the real delta.com search form, and one of its guessed selectors didn't
   match anything on the live page. The step name in the error (e.g. `"fill
   origin"`, `"select cabin"`) says exactly where it got stuck — that's
-  where to fix a selector in `driveSearchForm()`.
+  where to fix a selector in `driveSearchForm()`. The error also points to
+  a screenshot saved under `apps/scraper-worker/debug-screenshots/`,
+  showing exactly what the page looked like at the moment it failed (the
+  browser window itself closes immediately on failure, so this is the only
+  way to actually see that state afterward).
 - **`[delta-ui] ... no matching API response captured within 25s`** — the
   form steps all completed, but no response from Delta's offer API showed
   up. Likely the search never actually submitted (a step "succeeded" by

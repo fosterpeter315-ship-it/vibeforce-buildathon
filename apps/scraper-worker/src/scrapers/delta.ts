@@ -1,6 +1,14 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { chromium, type Page } from "playwright";
 import type { CabinClass } from "@points-search/shared";
 import { env } from "../env.js";
+
+const DEBUG_SCREENSHOT_DIR = path.resolve(process.cwd(), "debug-screenshots");
+
+function sanitizeForFilename(text: string): string {
+  return text.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "");
+}
 
 export interface ParsedFlight {
   milesPrice: number;
@@ -121,10 +129,12 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "type and select origin",
       async () => {
-        // Guessing that clicking the label above reveals a plain textbox to
-        // type into, then a matching suggestion to click. Unverified beyond
-        // that point.
-        const input = page.getByRole("textbox").first();
+        // A live test showed page.getByRole("textbox").first() fills some
+        // *other* textbox on the page (search bar, chat widget, etc.), not
+        // the one this reveals. Scoping to a "from-and-to"-classed container
+        // (guessed from the label's BEM-style class name) is a more targeted
+        // attempt, but still unverified beyond that.
+        const input = page.locator('[class*="from-and-to"]').getByRole("textbox").first();
         await input.fill(params.origin, { timeout: 10_000 });
         await page.getByText(new RegExp(params.origin, "i")).first().click({ timeout: 10_000 });
       },
@@ -138,7 +148,7 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "type and select destination",
       async () => {
-        const input = page.getByRole("textbox").first();
+        const input = page.locator('[class*="from-and-to"]').getByRole("textbox").first();
         await input.fill(params.destination, { timeout: 10_000 });
         await page
           .getByText(new RegExp(params.destination, "i"))
@@ -179,10 +189,32 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
       await action();
       console.log(`[delta-ui] ${label}: step ok — ${name}`);
     } catch (err) {
+      const screenshotPath = await saveDebugScreenshot(page, label, name);
       throw new Error(
-        `UI step failed at "${name}" — ${err instanceof Error ? err.message : String(err)}`,
+        `UI step failed at "${name}" — ${err instanceof Error ? err.message : String(err)}` +
+          (screenshotPath ? `\nScreenshot saved to: ${screenshotPath}` : ""),
       );
     }
+  }
+}
+
+/**
+ * Captures what the page actually looked like at the moment a step failed —
+ * the browser closes immediately after an error, so without this there's no
+ * way to see the real failure state (only a fresh, separately-navigated
+ * page, which may be in a different state than the automated run reached).
+ */
+async function saveDebugScreenshot(page: Page, label: string, stepName: string): Promise<string | null> {
+  try {
+    await mkdir(DEBUG_SCREENSHOT_DIR, { recursive: true });
+    const filePath = path.join(
+      DEBUG_SCREENSHOT_DIR,
+      `${sanitizeForFilename(label)}--${sanitizeForFilename(stepName)}.png`,
+    );
+    await page.screenshot({ path: filePath, timeout: 5_000 });
+    return filePath;
+  } catch {
+    return null;
   }
 }
 
