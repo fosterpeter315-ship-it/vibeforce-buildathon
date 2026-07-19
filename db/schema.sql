@@ -12,9 +12,13 @@ CREATE TABLE IF NOT EXISTS searches (
   date_start         date NOT NULL,
   date_end           date NOT NULL,
   program            text NOT NULL,
+  nonstop_only       boolean NOT NULL DEFAULT false,
   status             text NOT NULL DEFAULT 'pending',
   created_at         timestamptz NOT NULL DEFAULT now()
 );
+
+-- Idempotent for anyone who already ran the migration before this column existed.
+ALTER TABLE searches ADD COLUMN IF NOT EXISTS nonstop_only boolean NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS search_legs (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),

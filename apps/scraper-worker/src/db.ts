@@ -50,8 +50,9 @@ export async function insertFlightResults(
 }
 
 /**
- * If an identical (origin, destination, date, cabin, program) leg completed
- * successfully within the cache TTL, reuse its results instead of scraping again.
+ * If an identical (origin, destination, date, cabin, program, nonstopOnly)
+ * leg completed successfully within the cache TTL, reuse its results instead
+ * of scraping again.
  */
 export async function findCachedLeg(params: {
   origin: string;
@@ -59,6 +60,7 @@ export async function findCachedLeg(params: {
   searchDate: string;
   cabin: CabinClass;
   program: LoyaltyProgram;
+  nonstopOnly: boolean;
   ttlMinutes: number;
 }): Promise<{ legId: string } | null> {
   const { rows } = await pool.query<{ id: string }>(
@@ -70,8 +72,9 @@ export async function findCachedLeg(params: {
         AND sl.search_date = $3
         AND s.cabin = $4
         AND s.program = $5
+        AND s.nonstop_only = $6
         AND sl.status = 'done'
-        AND sl.created_at > now() - ($6 || ' minutes')::interval
+        AND sl.created_at > now() - ($7 || ' minutes')::interval
       ORDER BY sl.created_at DESC
       LIMIT 1`,
     [
@@ -80,6 +83,7 @@ export async function findCachedLeg(params: {
       params.searchDate,
       params.cabin,
       params.program,
+      params.nonstopOnly,
       params.ttlMinutes,
     ],
   );

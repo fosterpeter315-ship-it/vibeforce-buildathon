@@ -28,8 +28,8 @@ export async function POST(request: Request): Promise<NextResponse> {
   const dates = expandDateRange(input.dateStart, dateEnd);
 
   const { rows: searchRows } = await pool.query(
-    `INSERT INTO searches (origin, destination_type, destination_region, cabin, date_start, date_end, program, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+    `INSERT INTO searches (origin, destination_type, destination_region, cabin, date_start, date_end, program, nonstop_only, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
      RETURNING id`,
     [
       input.origin,
@@ -39,6 +39,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       input.dateStart,
       dateEnd,
       input.program,
+      input.nonstopOnly ?? false,
     ],
   );
   const searchId: string = searchRows[0].id;
@@ -63,6 +64,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           searchDate,
           cabin: input.cabin,
           program: input.program,
+          nonstopOnly: input.nonstopOnly ?? false,
         },
       });
     }

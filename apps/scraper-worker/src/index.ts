@@ -16,7 +16,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function processLeg(job: Job<SearchLegJob>): Promise<void> {
-  const { legId, searchId, origin, destinationAirport, searchDate, cabin, program } = job.data;
+  const { legId, searchId, origin, destinationAirport, searchDate, cabin, program, nonstopOnly } =
+    job.data;
 
   // Jittered pacing so a region search doesn't hit delta.com in a burst.
   await sleep(Math.random() * env.jitterMs);
@@ -29,6 +30,7 @@ async function processLeg(job: Job<SearchLegJob>): Promise<void> {
       searchDate,
       cabin,
       program,
+      nonstopOnly,
       ttlMinutes: env.cacheTtlMinutes,
     });
 
@@ -40,6 +42,7 @@ async function processLeg(job: Job<SearchLegJob>): Promise<void> {
         destination: destinationAirport,
         date: searchDate,
         cabin,
+        nonstopOnly,
       });
       await insertFlightResults(legId, origin, destinationAirport, cabin, flights);
     }

@@ -19,6 +19,7 @@ export interface DeltaSearchParams {
   destination: string;
   date: string; // YYYY-MM-DD
   cabin: CabinClass;
+  nonstopOnly: boolean;
 }
 
 const OFFER_API_URL = "https://offer-api-prd.delta.com/prd/rm-offer-gql";
@@ -90,7 +91,10 @@ function buildRequestBody(params: DeltaSearchParams) {
           resultsPageNum: 1,
           pricingCriteria: { priceableIn: ["MILES"] },
           preferences: {
-            nonStopOnly: false,
+            // Field name confirmed from the capture (value there was false);
+            // Delta's actual filtering behavior for true is not yet verified,
+            // so parseCalendarResponse() below re-filters defensively too.
+            nonStopOnly: params.nonstopOnly,
             refundableOnly: false,
             excludeBrandTypes: [],
           },
@@ -172,7 +176,14 @@ function parseCalendarResponse(payload: unknown, params: DeltaSearchParams): Par
   const daySet = offerSets.find((set) => set.itineraryDepartureDate === params.date);
   if (!daySet) return [];
 
-  const priced = (daySet.offers ?? []).filter((offer: any) => offer.offerPricing?.length);
+  let priced = (daySet.offers ?? []).filter((offer: any) => offer.offerPricing?.length);
+  // Defensive re-filter: the request already asked Delta for nonStopOnly,
+  // but that server-side behavior is unverified, so don't trust it alone.
+  if (params.nonstopOnly) {
+    priced = priced.filter(
+      (offer: any) => (offer.additionalOfferProperties?.totalTripStopCnt ?? 0) === 0,
+    );
+  }
   if (priced.length === 0) return [];
 
   const cheapest = priced.reduce((best: any, offer: any) => {

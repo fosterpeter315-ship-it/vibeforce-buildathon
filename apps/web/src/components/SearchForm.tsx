@@ -18,6 +18,7 @@ export function SearchForm() {
   const [region, setRegion] = useState(Object.keys(REGIONS)[0]);
   const [airportsText, setAirportsText] = useState("LHR, CDG, AMS");
   const [cabin, setCabin] = useState<CabinClass>("business");
+  const [nonstopOnly, setNonstopOnly] = useState(false);
   const [dateStart, setDateStart] = useState("");
   const [flexible, setFlexible] = useState(false);
   const [dateEnd, setDateEnd] = useState("");
@@ -49,6 +50,7 @@ export function SearchForm() {
       dateStart,
       dateEnd: flexible && dateEnd ? dateEnd : undefined,
       program: "delta",
+      nonstopOnly,
     };
 
     setSubmitting(true);
@@ -144,6 +146,18 @@ export function SearchForm() {
         <label htmlFor="program">Loyalty program</label>
         <select id="program" value="delta" disabled>
           <option value="delta">Delta SkyMiles</option>
+        </select>
+      </div>
+
+      <div className="field">
+        <label htmlFor="stops">Stops</label>
+        <select
+          id="stops"
+          value={nonstopOnly ? "nonstop" : "any"}
+          onChange={(e) => setNonstopOnly(e.target.value === "nonstop")}
+        >
+          <option value="any">Don&apos;t care (cheapest overall)</option>
+          <option value="nonstop">Nonstop only</option>
         </select>
       </div>
 

@@ -10,6 +10,7 @@ export function mapSearchRow(row: any): Search {
     dateStart: row.date_start,
     dateEnd: row.date_end,
     program: row.program,
+    nonstopOnly: row.nonstop_only,
     status: row.status,
     createdAt: row.created_at,
   };

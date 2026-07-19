@@ -68,7 +68,8 @@ export function ResultsView({ searchId }: { searchId: string }) {
       <p className="result-meta" style={{ marginBottom: "0.5rem" }}>
         {search.cabin.replace("_", " ")} &middot; {search.dateStart}
         {search.dateEnd !== search.dateStart ? ` to ${search.dateEnd}` : ""} &middot;{" "}
-        {search.program === "delta" ? "Delta SkyMiles" : search.program}
+        {search.program === "delta" ? "Delta SkyMiles" : search.program} &middot;{" "}
+        {search.nonstopOnly ? "Nonstop only" : "Cheapest overall"}
       </p>
       <div className="progress-track">
         <div className="progress-fill" style={{ width: `${progressPct}%` }} />

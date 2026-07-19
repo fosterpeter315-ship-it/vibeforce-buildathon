@@ -16,6 +16,8 @@ export interface SearchInput {
   /** Optional end of a flexible date range (inclusive). Omit for a single-date search. */
   dateEnd?: string;
   program: LoyaltyProgram;
+  /** true = only nonstop itineraries count toward the cheapest price. false = cheapest overall, any stops. */
+  nonstopOnly: boolean;
 }
 
 export type SearchStatus = "pending" | "running" | "done" | "failed";
@@ -30,6 +32,7 @@ export interface Search {
   dateStart: string;
   dateEnd: string;
   program: LoyaltyProgram;
+  nonstopOnly: boolean;
   status: SearchStatus;
   createdAt: string;
 }
@@ -74,6 +77,7 @@ export interface SearchLegJob {
   searchDate: string;
   cabin: CabinClass;
   program: LoyaltyProgram;
+  nonstopOnly: boolean;
 }
 
 export const SEARCH_LEG_QUEUE = "search-leg";
