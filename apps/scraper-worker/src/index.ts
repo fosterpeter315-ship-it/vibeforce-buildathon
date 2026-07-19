@@ -21,8 +21,9 @@ async function processLeg(job: Job<SearchLegJob>): Promise<void> {
   const label = `${origin}->${destinationAirport} ${searchDate} (${cabin}${nonstopOnly ? ", nonstop" : ""})`;
   console.log(`[leg] ${label}: picked up job ${job.id}`);
 
-  // Jittered pacing so a region search doesn't hit delta.com in a burst.
-  await sleep(Math.random() * env.jitterMs);
+  // Guaranteed spacing (plus extra random jitter on top) so a region search
+  // never hits delta.com in a burst — see the note on env.concurrency.
+  await sleep(env.minDelayMs + Math.random() * env.jitterMs);
   await markLegStatus(legId, "running");
 
   try {

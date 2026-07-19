@@ -142,3 +142,12 @@ Still unverified / open work:
 - **Port already in use** — something else on your machine is already using
   port 3000, 5432, or 6379. Close other terminal windows running this
   project, or restart your machine, and try again.
+- **`[leg] ... FAILED — ... Delta offer API 444 ...`** — a `444` means
+  Delta's server closed the connection with no response, almost always
+  anti-bot/rate-limit protection reacting to automated-looking traffic (e.g.
+  several requests firing at once). The defaults are already set to run one
+  request at a time with a several-second delay between each — if you still
+  see `444`s, wait a while before searching again rather than retrying
+  repeatedly. This endpoint is unofficial and unsupported; Delta tightening
+  bot detection on it is a real, expected risk, not a bug to "fix" by trying
+  to look more convincing to their WAF.
