@@ -105,7 +105,11 @@ function buildRequestBody(params: DeltaSearchParams) {
                 departureLocalTs: `${params.date}T00:00:00`,
                 destinations: [{ airportCode: params.destination }],
                 origins: [{ airportCode: params.origin }],
-                calenderDateRequest: { daysBeforeCnt: 0, daysAfterCnt: 0 },
+                // Matches the exact window from the verified capture. A
+                // narrower/zero window was never confirmed against the real
+                // API and may behave differently (or return nothing) — we
+                // just pick params.date back out of this wider response.
+                calenderDateRequest: { daysBeforeCnt: 3, daysAfterCnt: 3 },
               },
             ],
           },
@@ -168,15 +172,26 @@ export async function runDeltaSearch(params: DeltaSearchParams): Promise<ParsedF
 }
 
 function parseCalendarResponse(payload: unknown, params: DeltaSearchParams): ParsedFlight[] {
+  const label = `${params.origin}->${params.destination} ${params.date} (${params.cabin})`;
   const search = (payload as any)?.data?.gqlSearchOffers;
   const offerSets: any[] = search?.gqlOffersSets ?? [];
   const currency: string =
     search?.offerDataList?.pricingOptions?.[0]?.pricingOptionDetail?.currencyCode ?? "USD";
 
   const daySet = offerSets.find((set) => set.itineraryDepartureDate === params.date);
-  if (!daySet) return [];
+  if (!daySet) {
+    const available = offerSets.map((s) => s.itineraryDepartureDate);
+    console.log(
+      `[delta] ${label}: no matching day in response. Dates returned: ${available.join(", ") || "(none — check for GraphQL errors)"}`,
+    );
+    if ((payload as any)?.errors) {
+      console.log(`[delta] ${label}: GraphQL errors:`, JSON.stringify((payload as any).errors));
+    }
+    return [];
+  }
 
   let priced = (daySet.offers ?? []).filter((offer: any) => offer.offerPricing?.length);
+  const totalOffers = (daySet.offers ?? []).length;
   // Defensive re-filter: the request already asked Delta for nonStopOnly,
   // but that server-side behavior is unverified, so don't trust it alone.
   if (params.nonstopOnly) {
@@ -184,7 +199,14 @@ function parseCalendarResponse(payload: unknown, params: DeltaSearchParams): Par
       (offer: any) => (offer.additionalOfferProperties?.totalTripStopCnt ?? 0) === 0,
     );
   }
-  if (priced.length === 0) return [];
+  if (priced.length === 0) {
+    console.log(
+      `[delta] ${label}: day found but 0 usable offers (${totalOffers} total offers, ` +
+        `${(daySet.offers ?? []).filter((o: any) => o.offerPricing?.length).length} priced before nonstop filter). ` +
+        `If cabin is not economy, this is likely the unverified CABIN_BRAND_ID guess ("${CABIN_BRAND_ID[params.cabin]}") being wrong.`,
+    );
+    return [];
+  }
 
   const cheapest = priced.reduce((best: any, offer: any) => {
     const miles = offer.offerPricing[0]?.totalAmt?.milesEquivalentPrice?.mileCnt ?? Infinity;
