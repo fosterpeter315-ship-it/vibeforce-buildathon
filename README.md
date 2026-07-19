@@ -7,6 +7,64 @@ destination airport and shows you the cheapest award options.
 
 **Status:** prototype. Delta SkyMiles is the only supported program.
 
+**This needs a real internet connection to do anything useful** — it
+searches Delta's actual site. Run it on your own computer while connected to
+wifi, not in a sandboxed/offline environment.
+
+## Quick start (first time on this machine)
+
+This is a small local web app, not a single file — it needs a couple of
+background pieces running (a database and a search worker) alongside the
+website itself. None of it gets hosted anywhere or exposed to the internet;
+everything only talks to `localhost` on your own machine, plus outbound
+requests to delta.com when you run a search.
+
+**1. Install two programs, if you don't already have them:**
+
+- **Node.js** — go to [nodejs.org](https://nodejs.org), download the "LTS"
+  version, run the installer. This gives you the `node` and `npm` commands.
+- **Docker Desktop** — go to [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/),
+  download and install it, then **open the Docker Desktop app once** and
+  leave it running in the background. This is what runs the small database
+  and job queue this app needs.
+
+**2. Unzip the project folder** wherever you like, then open a terminal
+(Terminal.app on Mac, or Command Prompt/PowerShell on Windows) and `cd` into
+that folder — e.g.:
+
+```bash
+cd ~/Downloads/airline-points-search
+```
+
+**3. Run these commands, in order, in that terminal:**
+
+```bash
+docker compose up -d      # starts the database + job queue in the background
+npm install                # installs everything, including a headless browser (~300MB, one-time)
+npm run db:migrate         # sets up the database tables
+npm run dev                # starts the website + search worker together
+```
+
+`npm install` will take a few minutes the first time (it downloads a
+headless Chromium browser for the search worker to use). Once `npm run dev`
+prints that both `web` and `worker` are ready, open **http://localhost:3000**
+in your browser.
+
+Leave that terminal window open while you use the app — closing it stops
+both the website and the search worker. Press `Ctrl+C` in the terminal to
+stop everything when you're done.
+
+## Running it again later
+
+Once you've done the steps above once, next time you just need:
+
+```bash
+docker compose up -d   # if Docker Desktop was fully shut down
+npm run dev
+```
+
+(Make sure Docker Desktop is open first.)
+
 ## How it works
 
 - `apps/web` — Next.js app. Search form + results UI, plus API routes that
@@ -41,18 +99,6 @@ Search request (ATL → Europe, 2026-09-10, Business, Delta)
   web UI polls GET /api/search/:id, renders results grouped by destination
 ```
 
-## Running locally
-
-```bash
-docker compose up -d          # Postgres + Redis
-npm install
-npm run db:migrate            # creates tables, seeds region data
-npm run dev:worker             # in one terminal
-npm run dev:web                 # in another
-```
-
-Web app: http://localhost:3000
-
 ## Important caveats
 
 - This automates Delta's own website (no official award-search API exists).
@@ -82,3 +128,17 @@ Still unverified / open work:
   always empty. Getting real flight times/numbers requires capturing the
   richer query that fires when you click from the calendar into one
   specific date's flight list.
+
+## If something goes wrong
+
+- **`docker compose up -d` fails / "Cannot connect to the Docker daemon"** —
+  Docker Desktop isn't running. Open the Docker Desktop app and wait for it
+  to say it's running, then try again.
+- **A search never finishes / always fails** — open the terminal window
+  running `npm run dev` and look at the `worker` lines for an error message.
+  Since cabin selection beyond Economy is unverified (see above), business
+  or first-class searches are the most likely to come back empty or fail —
+  try an Economy search first to confirm the basic pipeline works.
+- **Port already in use** — something else on your machine is already using
+  port 3000, 5432, or 6379. Close other terminal windows running this
+  project, or restart your machine, and try again.
