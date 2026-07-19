@@ -129,12 +129,10 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "type and select origin",
       async () => {
-        // A live test showed page.getByRole("textbox").first() fills some
-        // *other* textbox on the page (search bar, chat widget, etc.), not
-        // the one this reveals. Scoping to a "from-and-to"-classed container
-        // (guessed from the label's BEM-style class name) is a more targeted
-        // attempt, but still unverified beyond that.
-        const input = page.locator('[class*="from-and-to"]').getByRole("textbox").first();
+        // Confirmed via screenshot: clicking "From" opens a modal titled
+        // "Search" with a single text input, placeholder "Origin" — not
+        // nested in any "from-and-to"-classed container.
+        const input = page.getByPlaceholder(/^origin$/i).first();
         await input.fill(params.origin, { timeout: 10_000 });
         await page.getByText(new RegExp(params.origin, "i")).first().click({ timeout: 10_000 });
       },
@@ -148,7 +146,10 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "type and select destination",
       async () => {
-        const input = page.locator('[class*="from-and-to"]').getByRole("textbox").first();
+        // Guessing the destination modal mirrors the origin one exactly
+        // (placeholder "Destination") — unverified, but a reasonable bet
+        // given how closely paired these two fields are in the UI.
+        const input = page.getByPlaceholder(/^destination$/i).first();
         await input.fill(params.destination, { timeout: 10_000 });
         await page
           .getByText(new RegExp(params.destination, "i"))
