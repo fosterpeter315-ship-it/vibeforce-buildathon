@@ -28,35 +28,41 @@ requests to delta.com when you run a search.
   leave it running in the background. This is what runs the small database
   and job queue this app needs.
 
-**2. Unzip the project folder** wherever you like, then open a terminal
-(Terminal.app on Mac, or Command Prompt/PowerShell on Windows) and `cd` into
-that folder — e.g.:
+**2. Unzip the project folder** wherever you like.
 
-```bash
-cd ~/Downloads/airline-points-search
-```
+**3. Start it up** — two ways, pick one:
 
-**3. Run these commands, in order, in that terminal:**
+- **Mac: double-click `Start App.command`** in the unzipped folder. It
+  starts Docker's containers, installs dependencies the first time,
+  runs the database setup, starts the app, and opens
+  http://localhost:3000 automatically once it's ready.
 
-```bash
-docker compose up -d      # starts the database + job queue in the background
-npm install                # installs everything, including a headless browser (~300MB, one-time)
-npm run db:migrate         # sets up the database tables
-npm run dev                # starts the website + search worker together
-```
+  The **first time you run it**, macOS will likely refuse with something
+  like *"cannot be opened because it is from an unidentified developer"* —
+  that's normal for any script downloaded from outside the App Store.
+  **Right-click (or Control-click) `Start App.command` → Open**, then
+  confirm in the dialog that appears. After that first approval, double-
+  clicking it normally will work.
 
-`npm install` will take a few minutes the first time (it downloads a
-headless Chromium browser for the search worker to use). Once `npm run dev`
-prints that both `web` and `worker` are ready, open **http://localhost:3000**
-in your browser.
+  Leave the Terminal window it opens running while you use the app —
+  closing it stops everything. Press `Ctrl+C` in it to stop on purpose.
 
-Leave that terminal window open while you use the app — closing it stops
-both the website and the search worker. Press `Ctrl+C` in the terminal to
-stop everything when you're done.
+- **Or run it manually** — open a terminal (Terminal.app), `cd` into the
+  unzipped folder, then:
+
+  ```bash
+  docker compose up -d      # starts the database + job queue in the background
+  npm install                # installs everything, including a headless browser (~300MB, one-time)
+  npm run db:migrate         # sets up the database tables
+  npm run dev                # starts the website + search worker together
+  ```
+
+  Once it prints that both `web` and `worker` are ready, open
+  **http://localhost:3000** yourself.
 
 ## Running it again later
 
-Once you've done the steps above once, next time you just need:
+Either double-click `Start App.command` again, or manually:
 
 ```bash
 docker compose up -d   # if Docker Desktop was fully shut down
