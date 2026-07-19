@@ -31,15 +31,6 @@ export interface DeltaSearchParams {
 }
 
 /**
- * Substring match, not exact: we want to capture this call regardless of
- * which "x-app-route" the real UI flow ends up using (the calendar view we
- * originally captured used "dates"; the main one-way search flow may use a
- * different route with a different response shape — see parseOfferResponse
- * below for how that's handled).
- */
-const OFFER_API_URL_SUBSTRING = "offer-api-prd.delta.com/prd/rm-offer-gql";
-
-/**
  * UI labels as they're guessed to appear on delta.com's cabin selector.
  * UNVERIFIED — only "economy" maps to data we've actually confirmed works
  * (via the direct-API-call approach, not this UI flow). The others are
@@ -327,26 +318,63 @@ export async function runDeltaSearch(params: DeltaSearchParams): Promise<ParsedF
     });
     const page = await context.newPage();
 
+    // The winning payload (matches the shape parseOfferResponse understands).
     let capturedPayload: unknown = null;
-    page.on("response", async (response) => {
-      if (!response.url().includes(OFFER_API_URL_SUBSTRING) || capturedPayload) return;
+    // Fallback candidates: any Delta JSON that *looks* offer-related but
+    // didn't match the known shape — logged if we never find a real match,
+    // so we can learn what the actual results payload looks like.
+    const candidates: Array<{ url: string; json: unknown }> = [];
+
+    const looksOfferRelated = (url: string) =>
+      /delta\.com/i.test(url) && /(offer|shop|search|avail|gql|itiner|fare|price)/i.test(url);
+
+    const handleResponse = async (response: { url(): string; json(): Promise<unknown> }) => {
+      if (capturedPayload) return;
+      const url = response.url();
+      if (!looksOfferRelated(url)) return;
+      let json: unknown;
       try {
-        capturedPayload = await response.json();
-        console.log(`[delta-ui] ${label}: captured response (status ${response.status()})`);
+        json = await response.json();
       } catch {
-        console.log(`[delta-ui] ${label}: matching response wasn't JSON or was already consumed`);
+        return; // not JSON, or body already gone
       }
-    });
+      if ((json as any)?.data?.gqlSearchOffers) {
+        capturedPayload = json;
+        console.log(`[delta-ui] ${label}: captured a gqlSearchOffers response from ${url}`);
+      } else {
+        candidates.push({ url, json });
+      }
+    };
+
+    // Attach to the first page, and to any new tab/popup the search opens.
+    page.on("response", handleResponse);
+    context.on("page", (p) => p.on("response", handleResponse));
 
     await driveSearchForm(page, params, label);
 
-    const deadline = Date.now() + 25_000;
+    const deadline = Date.now() + 45_000;
     while (!capturedPayload && Date.now() < deadline) {
       await sleep(500);
     }
 
     if (!capturedPayload) {
-      console.log(`[delta-ui] ${label}: no matching API response captured within 25s`);
+      console.log(`[delta-ui] ${label}: no gqlSearchOffers response captured within 45s.`);
+      if (candidates.length > 0) {
+        console.log(
+          `[delta-ui] ${label}: ${candidates.length} other Delta JSON response(s) seen — URLs:\n` +
+            candidates.map((c) => `    ${c.url}`).join("\n"),
+        );
+        // Preview the largest candidate (most likely the real results payload).
+        const biggest = candidates
+          .map((c) => ({ url: c.url, text: JSON.stringify(c.json) }))
+          .sort((a, b) => b.text.length - a.text.length)[0];
+        console.log(
+          `[delta-ui] ${label}: preview of largest candidate (${biggest.url}):\n` +
+            biggest.text.slice(0, 2500),
+        );
+      } else {
+        console.log(`[delta-ui] ${label}: no Delta JSON responses seen at all after submit.`);
+      }
       return [];
     }
 
