@@ -261,8 +261,14 @@ async function driveSearchForm(page: Page, params: DeltaSearchParams, label: str
     [
       "submit search",
       async () => {
+        // Target "Find Flights" exactly (confirmed as the real submit
+        // button's label from a screenshot). The earlier /search/i pattern
+        // matched the header's magnifying-glass "Search" icon instead, which
+        // opened site search rather than running the flight search — the
+        // telltale was that only predictive-city/prefill calls fired after
+        // "submit", never a flight-offers request.
         await page
-          .getByRole("button", { name: /search|find flights/i })
+          .getByRole("button", { name: /find flights/i })
           .first()
           .click({ timeout: 10_000 });
       },
@@ -375,6 +381,11 @@ export async function runDeltaSearch(params: DeltaSearchParams): Promise<ParsedF
       } else {
         console.log(`[delta-ui] ${label}: no Delta JSON responses seen at all after submit.`);
       }
+      // Save what the page looks like now, and where it ended up, so we can
+      // tell whether submit actually navigated to a results page.
+      console.log(`[delta-ui] ${label}: final page URL after submit: ${page.url()}`);
+      const shot = await saveDebugScreenshot(page, label, "after-submit-no-offers");
+      if (shot) console.log(`[delta-ui] ${label}: post-submit screenshot saved to: ${shot}`);
       return [];
     }
 
